@@ -382,12 +382,16 @@ static fpga_display_result_t fpga_handle_json(char *line)
         if (payload[0] == '\0') {
             snprintf(payload, sizeof(payload), "(empty)");
         }
-        slave_ui_set_sms(payload, (uint8_t)addr, group_call);
-        snprintf(status, sizeof(status), "SMS len=%ld crc=%s",
+
+        /* Log SMS detection BEFORE address filter, so every captured frame is visible */
+        snprintf(status, sizeof(status), "SMS addr=%ld len=%ld crc=%s",
+                 (long)addr,
                  (long)length,
-                 crc_ok ? "OK" : "?");
+                 crc_ok ? "OK" : "FAIL");
         slave_ui_set_capture_state(status);
         slave_ui_append_log(status);
+
+        slave_ui_set_sms(payload, (uint8_t)addr, group_call);
         g_fpga_sms_lines++;
         return FPGA_DISPLAY_RESULT_SMS;
     }

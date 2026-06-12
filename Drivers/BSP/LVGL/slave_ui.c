@@ -8,8 +8,8 @@
 #define SLAVE_STATION_COUNT       8U
 #define SMS_TEXT_MAX              96U
 #define PYNQ_TEXT_MAX             96U
-#define PYNQ_LOG_LINES            7U
-#define PYNQ_LOG_LINE_MAX         64U
+#define PYNQ_LOG_LINES            20U
+#define PYNQ_LOG_LINE_MAX         96U
 #define WAVE_POINT_COUNT          160U
 #define ADC_REF_MV                3300U
 #define ADC_FULL_SCALE            65535U
@@ -571,46 +571,78 @@ static void render_sms(void)
 {
     lv_obj_t *c = g_ui.content;
     char value[48];
+    int32_t content_w = lv_obj_get_width(c);
+    int32_t content_h = lv_obj_get_height(c);
+    if (content_w <= 0) { content_w = 800; }
+    if (content_h <= 0) { content_h = 340; }
 
-    lv_obj_t *control = make_panel(c, 8, 8, 248, 336, "PYNQ Control");
+    /* Three-column layout: Control | SMS Inbox | Log */
+    int32_t pad = 6;
+    int32_t ctrl_w = 180;
+    int32_t inbox_w = 260;
+    int32_t log_w = content_w - ctrl_w - inbox_w - pad * 4;
+    if (log_w < 200) { log_w = 200; }
+
+    int32_t ctrl_x = pad;
+    int32_t inbox_x = ctrl_x + ctrl_w + pad;
+    int32_t log_x = inbox_x + inbox_w + pad;
+    int32_t panel_h = content_h - pad * 2;
+    int32_t log_inner_w = log_w - 20;
+
+    /* ---- PYNQ Control (left) ---- */
+    lv_obj_t *control = make_panel(c, ctrl_x, pad, ctrl_w, panel_h, "PYNQ Control");
     lv_obj_t *btn;
-    make_label(control, "UART1 115200 8N1", 14, 42, &lv_font_montserrat_14, C_MUTED);
-    btn = make_button(control, "STATUS", 14, 76, 102, 42, C_PANEL_2, NULL);
+    make_label(control, "UART1 115200", 10, 38, &lv_font_montserrat_14, C_MUTED);
+    btn = make_button(control, "STATUS", 10, 68, 72, 36, C_PANEL_2, NULL);
     lv_obj_add_event_cb(btn, command_button_event, LV_EVENT_CLICKED, "STATUS");
-    btn = make_button(control, "TEST", 128, 76, 88, 42, C_PANEL_2, NULL);
+    btn = make_button(control, "TEST", 90, 68, 72, 36, C_PANEL_2, NULL);
     lv_obj_add_event_cb(btn, command_button_event, LV_EVENT_CLICKED, "TEST");
-    btn = make_button(control, "CAPTURE", 14, 132, 202, 48, C_ACCENT, NULL);
+    btn = make_button(control, "CAPTURE", 10, 116, 152, 42, C_ACCENT, NULL);
     lv_obj_add_event_cb(btn, command_button_event, LV_EVENT_CLICKED, "CAPTURE");
-    make_button(control, "CLEAR", 14, 272, 94, 40, C_WARN, sms_clear_event);
+    make_button(control, "CLEAR", 10, panel_h - 58, 80, 36, C_WARN, sms_clear_event);
 
-    lv_obj_t *state = make_panel(control, 14, 194, 202, 64, NULL);
-    g_ui.label_capture_state = make_label(state, "IDLE", 10, 10, &lv_font_montserrat_14, C_TEXT);
-    lv_obj_set_width(g_ui.label_capture_state, 182);
+    lv_obj_t *state = make_panel(control, 10, 172, ctrl_w - 28, 72, NULL);
+    g_ui.label_capture_state = make_label(state, "IDLE", 8, 8, &lv_font_montserrat_14, C_TEXT);
+    lv_obj_set_width(g_ui.label_capture_state, ctrl_w - 44);
     lv_label_set_long_mode(g_ui.label_capture_state, LV_LABEL_LONG_CLIP);
-    g_ui.label_test_result = make_label(state, "--", 10, 36, &lv_font_montserrat_14, C_ACCENT);
-    lv_obj_set_width(g_ui.label_test_result, 182);
+    g_ui.label_test_result = make_label(state, "--", 8, 34, &lv_font_montserrat_14, C_ACCENT);
+    lv_obj_set_width(g_ui.label_test_result, ctrl_w - 44);
     lv_label_set_long_mode(g_ui.label_test_result, LV_LABEL_LONG_CLIP);
 
-    lv_obj_t *inbox = make_panel(c, 264, 8, 302, 336, "SMS Characters");
+    /* ---- SMS Inbox (middle) ---- */
+    lv_obj_t *inbox = make_panel(c, inbox_x, pad, inbox_w, panel_h, "SMS Characters");
     snprintf(value, sizeof(value), "Addr: S%u%s", g_ui.state.last_sender,
              g_ui.state.group_call ? " / group" : "");
-    make_label(inbox, value, 14, 44, &lv_font_montserrat_14, C_MUTED);
+    make_label(inbox, value, 12, 40, &lv_font_montserrat_14, C_MUTED);
 
-    lv_obj_t *body = make_panel(inbox, 14, 76, 274, 236, NULL);
+    lv_obj_t *body = make_panel(inbox, 12, 70, inbox_w - 32, panel_h - 88, NULL);
     g_ui.label_sms_body = make_label(body,
                                      g_ui.state.sms_text[0] ? g_ui.state.sms_text : "(waiting for PYNQ SMS)",
-                                     12, 12,
+                                     10, 10,
                                      &lv_font_montserrat_18,
                                      g_ui.state.sms_text[0] ? C_TEXT : C_MUTED);
-    lv_obj_set_width(g_ui.label_sms_body, 248);
+    lv_obj_set_width(g_ui.label_sms_body, inbox_w - 52);
     lv_label_set_long_mode(g_ui.label_sms_body, LV_LABEL_LONG_WRAP);
 
-    lv_obj_t *log = make_panel(c, 574, 8, 218, 336, "PYNQ Log");
-    g_ui.label_pynq_status = make_label(log, "BOOT WAIT", 12, 42, &lv_font_montserrat_14, C_ACCENT);
-    lv_obj_set_width(g_ui.label_pynq_status, 194);
+    /* ---- PYNQ Log (right, scrollable, wide) ---- */
+    lv_obj_t *log = make_panel(c, log_x, pad, log_w, panel_h, "PYNQ Log");
+    g_ui.label_pynq_status = make_label(log, "BOOT WAIT", 10, 38, &lv_font_montserrat_14, C_ACCENT);
+    lv_obj_set_width(g_ui.label_pynq_status, log_inner_w);
     lv_label_set_long_mode(g_ui.label_pynq_status, LV_LABEL_LONG_CLIP);
-    g_ui.label_log = make_label(log, "waiting for PYNQ...", 12, 76, &lv_font_montserrat_14, C_TEXT);
-    lv_obj_set_width(g_ui.label_log, 194);
+
+    /* Scrollable log body — label auto-expands, parent scrolls */
+    lv_obj_t *log_body = lv_obj_create(log);
+    lv_obj_set_pos(log_body, 8, 68);
+    lv_obj_set_size(log_body, log_inner_w + 8, panel_h - 84);
+    lv_obj_set_style_bg_color(log_body, C_PANEL, 0);
+    lv_obj_set_style_bg_opa(log_body, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(log_body, 0, 0);
+    lv_obj_set_style_pad_all(log_body, 4, 0);
+    lv_obj_set_scrollbar_mode(log_body, LV_SCROLLBAR_MODE_AUTO);
+    lv_obj_add_flag(log_body, LV_OBJ_FLAG_SCROLLABLE);
+
+    g_ui.label_log = make_label(log_body, "waiting for PYNQ...", 4, 4, &lv_font_montserrat_14, C_TEXT);
+    lv_obj_set_width(g_ui.label_log, log_inner_w);
     lv_label_set_long_mode(g_ui.label_log, LV_LABEL_LONG_WRAP);
 
     update_pynq_labels();
@@ -1091,6 +1123,21 @@ void slave_ui_set_sms(const char *text, uint8_t sender_id, bool group_call)
     if (text == NULL) {
         text = "";
     }
+
+    /* ===== Address filter: only accept matching station or group call ===== */
+    bool is_group_sender = (sender_id == 0xFFU);
+    bool addr_match = (sender_id == g_ui.state.station_id);
+    bool group_accept = (is_group_sender && g_ui.state.group_enabled);
+
+    if (!addr_match && !group_accept) {
+        char drop_msg[96];
+        snprintf(drop_msg, sizeof(drop_msg), "DROP S%u: %s", sender_id,
+                 text[0] ? text : "(empty)");
+        slave_ui_append_log(drop_msg);
+        return;
+    }
+    /* ===== End address filter ===== */
+
     snprintf(g_ui.state.sms_text, sizeof(g_ui.state.sms_text), "%s", text);
     g_ui.state.last_sender = sender_id % SLAVE_STATION_COUNT;
     g_ui.state.group_call = group_call;
@@ -1099,9 +1146,8 @@ void slave_ui_set_sms(const char *text, uint8_t sender_id, bool group_call)
     g_ui.state.selected_call = true;
     update_top();
 
-    if (g_ui.page == PAGE_SMS) {
-        render_page(PAGE_SMS);
-    }
+    /* Refresh current page so SMS appears immediately on any page */
+    render_page(g_ui.page);
 }
 
 void slave_ui_set_battery(uint16_t millivolts, uint8_t percent)
