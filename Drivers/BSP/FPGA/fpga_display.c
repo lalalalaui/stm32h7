@@ -357,7 +357,7 @@ static fpga_display_result_t fpga_handle_json(char *line)
 {
     char kind[24];
     char payload[FPGA_DISPLAY_TEXT_MAX + 1U];
-    char status[48];
+    char status[FPGA_DISPLAY_TEXT_MAX + 32U];
     int32_t addr = 0;
     int32_t length = 0;
     bool crc_ok = false;
@@ -389,7 +389,7 @@ static fpga_display_result_t fpga_handle_json(char *line)
         if (group_call || addr_ok || ((uint8_t)addr == slave_ui_get_station_id())) {
             slave_ui_set_sms(payload, (uint8_t)addr, group_call);
         } else {
-            snprintf(status, sizeof(status), "DROP S%ld: %s",
+            snprintf(status, sizeof(status), "DROP S%ld: %.80s",
                      (long)addr,
                      payload[0] ? payload : "(empty)");
             slave_ui_append_log(status);
@@ -421,7 +421,7 @@ static fpga_display_result_t fpga_handle_sms(char *args)
     char *addr_s;
     char *text_s;
     char text[FPGA_DISPLAY_TEXT_MAX + 1U];
-    char status[64];
+    char status[FPGA_DISPLAY_TEXT_MAX + 32U];
     uint8_t addr;
     bool group_call;
 
@@ -453,7 +453,7 @@ static fpga_display_result_t fpga_handle_sms(char *args)
     if (group_call || (addr == slave_ui_get_station_id())) {
         slave_ui_set_sms(text, addr, group_call);
     } else {
-        snprintf(status, sizeof(status), "DROP S%u: %s", addr,
+        snprintf(status, sizeof(status), "DROP S%u: %.80s", addr,
                  text[0] ? text : "(empty)");
         slave_ui_append_log(status);
     }
