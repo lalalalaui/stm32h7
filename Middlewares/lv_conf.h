@@ -50,6 +50,7 @@
 #define LV_THEME_DEFAULT_DARK 0
 #define LV_FONT_MONTSERRAT_14 1
 #define LV_FONT_MONTSERRAT_18 1
+#define LV_FONT_MONTSERRAT_32 1
 #define LV_FONT_DEFAULT &lv_font_montserrat_14
 
 #define LV_USE_DEMO_WIDGETS 0

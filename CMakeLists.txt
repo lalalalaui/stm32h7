@@ -70,6 +70,7 @@ set(LVGL_SOURCES
     Middlewares/lvgl/src/font/fmt_txt/lv_font_fmt_txt.c
     Middlewares/lvgl/src/font/lv_font_montserrat_14.c
     Middlewares/lvgl/src/font/lv_font_montserrat_18.c
+    Middlewares/lvgl/src/font/lv_font_montserrat_32.c
     Middlewares/lvgl/src/libs/bin_decoder/lv_bin_decoder.c
     Middlewares/lvgl/src/lv_init.c
     Middlewares/lvgl/src/osal/lv_os.c
@@ -89,6 +90,11 @@ target_link_directories(${CMAKE_PROJECT_NAME} PRIVATE
 # Add sources to executable
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     ${LVGL_SOURCES}
+    Core/Src/power_meter_hw.c
+    Core/Src/power_meter.c
+    Core/Src/responsivity_table.c
+    Core/Src/power_meter_port.c
+    Core/Src/power_meter_storage.c
     Drivers/SYSTEM/delay/delay.c
     Drivers/SYSTEM/sys/sys.c
     Drivers/SYSTEM/usart/usart.c
@@ -101,6 +107,7 @@ target_sources(${CMAKE_PROJECT_NAME} PRIVATE
     Drivers/BSP/LCD/ltdc.c
     Drivers/BSP/LED/led.c
     Drivers/BSP/LVGL/lvgl_port.c
+    Drivers/BSP/LVGL/lv_font_chinese_14.c
     Drivers/BSP/LVGL/slave_ui.c
     Drivers/BSP/MPU/mpu.c
     Drivers/BSP/SDRAM/sdram.c

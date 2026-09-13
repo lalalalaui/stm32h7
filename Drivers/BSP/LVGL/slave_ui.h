@@ -21,6 +21,10 @@ void slave_ui_set_rx_state(bool carrier_detected,
 void slave_ui_set_sms(const char *text, uint8_t sender_id, bool group_call);
 void slave_ui_set_battery(uint16_t millivolts, uint8_t percent);
 void slave_ui_set_waveform(const uint16_t *samples, uint16_t count);
+void slave_ui_reset_waveform(void);
+
+/* Set before slave_ui_create() to restore the persisted display selection. */
+void slave_ui_set_power_meter_display_mode(uint8_t display_mode);
 
 uint8_t slave_ui_get_station_id(void);
 bool slave_ui_group_enabled(void);

@@ -26,17 +26,19 @@
 #define __ADC_H
 
 #include "./SYSTEM/sys/sys.h"
+#include "power_meter_board.h"
+#include <stdbool.h>
 
 /******************************************************************************************/
 
 /* ADC及引脚 定义 */
-#define ADC_ADCX_CHY_GPIO_PORT              GPIOA
-#define ADC_ADCX_CHY_GPIO_PIN               GPIO_PIN_5
-#define ADC_ADCX_CHY_GPIO_CLK_ENABLE()      do{ __HAL_RCC_GPIOA_CLK_ENABLE(); }while(0)     /* PA口时钟使能 */
+#define ADC_ADCX_CHY_GPIO_PORT              PM_AFE_OUT_GPIO_Port
+#define ADC_ADCX_CHY_GPIO_PIN               PM_AFE_OUT_Pin
+#define ADC_ADCX_CHY_GPIO_CLK_ENABLE()      do{ PM_AFE_OUT_GPIO_CLK_ENABLE(); }while(0)
 
-#define ADC_ADCX                            ADC1
-#define ADC_ADCX_CHY                        ADC_CHANNEL_19                                  /* 通道Y,  0 <= Y <= 19 */ 
-#define ADC_ADCX_CHY_CLK_ENABLE()           do{ __HAL_RCC_ADC12_CLK_ENABLE(); }while(0)     /* ADC1 时钟使能 */
+#define ADC_ADCX                            PM_ADC_INSTANCE
+#define ADC_ADCX_CHY                        PM_ADC_CHANNEL
+#define ADC_ADCX_CHY_CLK_ENABLE()           do{ PM_ADC_CLK_ENABLE(); }while(0)
 
 /* ADC单通道/多通道 DMA采集 DMA数据流相关 定义
  * 注意: 这里我们的通道还是使用上面的定义.
@@ -65,5 +67,20 @@ void adc_dma_init(uint32_t par, uint32_t mar);                /* ADC DMA采集�
 void adc_dma_enable( uint16_t ndtr);                          /* 使能一次ADC DMA采集传输 */
 uint16_t adc_dma_read_snapshot(uint16_t *dst, uint16_t max_count);
 uint32_t adc_dma_get_sample_rate_hz(void);
+
+typedef struct
+{
+    uint32_t completed_ms;
+    uint32_t sequence;
+    uint32_t acquisition_id;
+} adc_dma_snapshot_info_t;
+
+/* Main-loop-only pause/resume. Resume starts a NEW full buffer, same rate. */
+bool adc_dma_pause(void);
+bool adc_dma_resume(void);
+bool adc_dma_is_running(void);
+uint32_t adc_dma_get_acquisition_id(void);
+uint16_t adc_dma_read_snapshot_ex(uint16_t *dst, uint16_t max_count,
+                                  adc_dma_snapshot_info_t *info);
 
 #endif 

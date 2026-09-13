@@ -135,7 +135,10 @@ static uint16_t *g_adc_dma_mem = NULL;
 static uint16_t g_adc_dma_len = 0;
 static uint32_t g_adc_dma_sample_rate_hz = ADC_DMA_SAMPLE_RATE_HZ;
 static volatile uint16_t g_adc_dma_snapshot_len = 0;
-static uint8_t g_adc_dma_started = 0;
+static volatile uint8_t g_adc_dma_started = 0;
+static uint32_t g_adc_acquisition_id = 0U;
+static uint32_t g_adc_sequence = 0U;
+static adc_dma_snapshot_info_t g_adc_snapshot_info;
 
 volatile uint8_t g_adc_dma_sta = 0;     /* DMA传输状态标志, 0,未完成; 1, 已完成 */
 
@@ -198,6 +201,9 @@ void adc_dma_init(uint32_t par, uint32_t mar)
     g_adc_dma_len = 0U;
     g_adc_dma_snapshot_len = 0U;
     g_adc_dma_started = 0U;
+    g_adc_acquisition_id = 0U;
+    g_adc_sequence = 0U;
+    g_adc_dma_sta = 0U;
 
     ADC_ADCX_CHY_GPIO_CLK_ENABLE();                                             /* 开启ADC通道IO引脚时钟 */
     ADC_ADCX_CHY_CLK_ENABLE();                                                  /* 使能ADC1/2时钟 */
@@ -285,23 +291,71 @@ void adc_dma_enable(uint16_t ndtr)
     }
 
     g_adc_dma_len = ndtr;
+    (void)adc_dma_resume();
+}
+
+bool adc_dma_pause(void)
+{
+    HAL_StatusTypeDef adc_status = HAL_OK;
+    HAL_StatusTypeDef tim_status;
+
+    HAL_NVIC_DisableIRQ(ADC_ADCX_DMASx_IRQn);
+    tim_status = HAL_TIM_Base_Stop(&g_adc_tim_handle);
+    if (g_adc_dma_started != 0U)
+    {
+        g_adc_dma_started = 0U; /* No more snapshot publication. */
+        adc_status = HAL_ADC_Stop_DMA(&g_adc_dma_handle);
+    }
     g_adc_dma_sta = 0U;
     g_adc_dma_snapshot_len = 0U;
+    HAL_NVIC_ClearPendingIRQ(ADC_ADCX_DMASx_IRQn);
+    return tim_status == HAL_OK && adc_status == HAL_OK;
+}
 
-    if (HAL_ADC_Start_DMA(&g_adc_dma_handle, (uint32_t *)g_adc_dma_mem, ndtr) != HAL_OK)
+bool adc_dma_resume(void)
+{
+    if (g_adc_dma_started != 0U) { return true; }
+    if (g_adc_dma_mem == NULL || g_adc_dma_len == 0U) { return false; }
+
+    HAL_NVIC_DisableIRQ(ADC_ADCX_DMASx_IRQn);
+    g_adc_dma_sta = 0U;
+    g_adc_dma_snapshot_len = 0U;
+    HAL_NVIC_ClearPendingIRQ(ADC_ADCX_DMASx_IRQn);
+    __HAL_TIM_SET_COUNTER(&g_adc_tim_handle, 0U);
+    __HAL_TIM_CLEAR_FLAG(&g_adc_tim_handle, TIM_FLAG_UPDATE);
+
+    /* DMA is stopped here. Discard cached lines before the new DMA writes. */
+    uint32_t bytes = ((uint32_t)g_adc_dma_len * sizeof(uint16_t) + 31U) & ~31U;
+    SCB_InvalidateDCache_by_Addr((uint32_t *)g_adc_dma_mem, bytes);
+    if (HAL_ADC_Start_DMA(&g_adc_dma_handle, (uint32_t *)g_adc_dma_mem, g_adc_dma_len) != HAL_OK)
     {
-        return;
+        (void)HAL_ADC_Stop_DMA(&g_adc_dma_handle);
+        return false;
     }
 
     __HAL_DMA_DISABLE_IT(&g_dma_adc_handle, DMA_IT_HT);
+    g_adc_acquisition_id++;
+    g_adc_dma_started = 1U;
+    HAL_NVIC_EnableIRQ(ADC_ADCX_DMASx_IRQn);
 
     if (HAL_TIM_Base_Start(&g_adc_tim_handle) != HAL_OK)
     {
-        HAL_ADC_Stop_DMA(&g_adc_dma_handle);
-        return;
+        g_adc_dma_started = 0U;
+        HAL_NVIC_DisableIRQ(ADC_ADCX_DMASx_IRQn);
+        (void)HAL_ADC_Stop_DMA(&g_adc_dma_handle);
+        return false;
     }
+    return true;
+}
 
-    g_adc_dma_started = 1U;
+bool adc_dma_is_running(void)
+{
+    return g_adc_dma_started != 0U;
+}
+
+uint32_t adc_dma_get_acquisition_id(void)
+{
+    return g_adc_acquisition_id;
 }
 
 
@@ -317,7 +371,7 @@ void ADC_ADCX_DMASx_IRQHandler(void)
 
 void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
 {
-    if (hadc == &g_adc_dma_handle)
+    if (hadc == &g_adc_dma_handle && g_adc_dma_started != 0U)
     {
         if (g_adc_dma_mem != NULL && g_adc_dma_len > 0U)
         {
@@ -325,12 +379,21 @@ void HAL_ADC_ConvCpltCallback(ADC_HandleTypeDef *hadc)
             SCB_InvalidateDCache_by_Addr((uint32_t *)g_adc_dma_mem, bytes);
             memcpy(g_adc_dma_snapshot, g_adc_dma_mem, (uint32_t)g_adc_dma_len * sizeof(uint16_t));
             g_adc_dma_snapshot_len = g_adc_dma_len;
+            g_adc_snapshot_info.completed_ms = HAL_GetTick();
+            g_adc_snapshot_info.sequence = ++g_adc_sequence;
+            g_adc_snapshot_info.acquisition_id = g_adc_acquisition_id;
             g_adc_dma_sta = 1U;
         }
     }
 }
 
 uint16_t adc_dma_read_snapshot(uint16_t *dst, uint16_t max_count)
+{
+    return adc_dma_read_snapshot_ex(dst, max_count, NULL);
+}
+
+uint16_t adc_dma_read_snapshot_ex(uint16_t *dst, uint16_t max_count,
+                                  adc_dma_snapshot_info_t *info)
 {
     uint16_t count;
     uint32_t primask;
@@ -350,6 +413,7 @@ uint16_t adc_dma_read_snapshot(uint16_t *dst, uint16_t max_count)
     }
 
     memcpy(dst, g_adc_dma_snapshot, (uint32_t)count * sizeof(uint16_t));
+    if (info != NULL) { *info = g_adc_snapshot_info; }
     g_adc_dma_sta = 0U;
 
     if (primask == 0U)

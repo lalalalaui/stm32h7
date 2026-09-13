@@ -7,6 +7,9 @@
 
 #include <stdio.h>
 #include <string.h>
+#include "power_meter_board.h"
+#include "power_meter_hw.h"
+#include "power_meter.h"
 
 #include "./SYSTEM/sys/sys.h"
 #include "./SYSTEM/usart/usart.h"
@@ -20,6 +23,8 @@
 #include "./BSP/ADC/adc.h"
 #include "./BSP/FPGA/fpga_display.h"
 #include "./BSP/LVGL/lvgl_port.h"
+#include "power_meter_storage.h"
+#include "./BSP/24CXX/24cxx.h"
 #include "./BSP/LVGL/slave_ui.h"
 
 #define RGB565(r, g, b)   (uint16_t)((((r) & 0xF8) << 8) | (((g) & 0xF8) << 3) | (((b) & 0xF8) >> 3))
@@ -330,12 +335,29 @@ static void adc_dma_service(void)
     uint16_t i;
     uint16_t count;
     uint32_t sum = 0;
+    adc_dma_snapshot_info_t snapshot_info;
+    static uint32_t last_acquisition_id = 0U;
 
-    count = adc_dma_read_snapshot(g_adc_proc_buf, ADC_DMA_BUF_SIZE);
+    if (!PM_Service()) { return; }
+
+    count = adc_dma_read_snapshot_ex(g_adc_proc_buf, ADC_DMA_BUF_SIZE, &snapshot_info);
 
     if (count == 0U)
     {
         return;
+    }
+
+    /* Share the CPU snapshot; do not consume the DMA completion flag twice. */
+    pm_sample_info_t sample_info = {
+        .completed_ms = snapshot_info.completed_ms,
+        .sequence = snapshot_info.sequence,
+        .acquisition_id = snapshot_info.acquisition_id,
+        .range = PM_HW_GetRange()
+    };
+    if (!PM_ProcessADCSamples(g_adc_proc_buf, count, &sample_info)) { return; }
+    if (last_acquisition_id != snapshot_info.acquisition_id) {
+        slave_ui_reset_waveform();
+        last_acquisition_id = snapshot_info.acquisition_id;
     }
 
     for (i = 0; i < count; i++)
@@ -1065,6 +1087,7 @@ int main(void)
 {
     sys_cache_enable();
     HAL_Init();
+    PM_HW_Init();
     sys_stm32_clock_init(160, 5, 2, 4);
     delay_init(400);
     usart_init(115200);
@@ -1074,7 +1097,15 @@ int main(void)
     lcd_init();
     key_init();
     tp_dev.init();
-    adc_dma_init((uint32_t)&ADC1->DR, (uint32_t)g_adc_dma_buf);
+    /* 电容触摸初始化路径不会初始化AT24C02所用的I2C。 */
+    at24cxx_init();
+    PM_Init(PM_HW_GetRange());
+    pm_display_mode_t stored_display_mode;
+    if (PM_Storage_Load(&stored_display_mode))
+    {
+        slave_ui_set_power_meter_display_mode(stored_display_mode);
+    }
+    adc_dma_init((uint32_t)&PM_ADC_INSTANCE->DR, (uint32_t)g_adc_dma_buf);
     adc_dma_enable(ADC_DMA_BUF_SIZE);
     lvgl_port_init();
     lvgl_port_demo_create();
@@ -1087,6 +1118,7 @@ int main(void)
         uint32_t now = HAL_GetTick();
 
         adc_dma_service();
+        PM_CalibrationService();
         FPGA_DisplayPollUsart1();
         lv_timer_handler();
 
